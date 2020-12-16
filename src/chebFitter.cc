@@ -7,38 +7,32 @@
 #include <cassert>
 
 
+#include "TGraph.h"
+#include "TString.h"
+#include "Math/Minimizer.h"
+#include "Math/Factory.h"
+#include "Math/Functor.h"
+
+#include <Eigen/Core>
+
+using Eigen::MatrixXd;
 
 using namespace std;
 
-double myFun(double x, vector<double> pars)
+
+
+//return values of -2*log(p(x)), where p(x) is normalized to 1 over the fitted range
+VectorXd chebFitter::getLogFunction(vector<double> pars) const
 {
-    double a = -1 - pars[0];
-    double b = 1 - pars[0];
-    double N = sqrt(M_PI/2) * pars[1]* ( erf(b/sqrt(2)/pars[1])  - erf(a/sqrt(2)/pars[1]) );
-    double f = 1./N * exp( -1./2 * pow((x-pars[0])/pars[1], 2));
-    assert(f >= 0);
-   return f;
-}
-
-
-
-//return values of -log(p(x)), where p(x) is normalized to 1 over the fitted range
-vector<double> chebFitter::getLogFunction(vector<double> pars)
-{
-   vector<double> fVals(nodes.size());
+   VectorXd fVals(nodes.size());
 
    //calc function values
-   for(int i = 0; i < nodes.size(); ++i)
-      fVals[i] = myFun(nodes[i], pars);
+   fVals = nodes.unaryExpr([&](double x) { return myFun(x, pars); });
 
    //normalize the function
-   double I = 0;
-   for(int i = 0; i < nodes.size(); ++i)
-      I += fVals[i] * weights[i];
-
+   double I = fVals.dot(weights);
    //cout << "Integral " << I << endl;
-   for(auto &el : fVals)
-      el = -2 * log(el/I);
+   fVals = -2 * log(fVals.array() / I); //normalize by integral
 
    return fVals;
 
@@ -47,22 +41,27 @@ vector<double> chebFitter::getLogFunction(vector<double> pars)
 void chebFitter::init(int Size, double xMin, double xMax)
 {
    // loading the Cheb nodes
-   nodes = GetNodes(Size);
-   for(auto & el : nodes)
-      el = xMin + (xMax - xMin) * el;
+   nodes = (xMax-xMin) * GetNodes(Size).array() + xMin;
 
    // loding the weights for integration
-   weights = GetWeights(Size);
-   for(auto & el : weights)
-      el = (xMax - xMin) * el;
+   weights = (xMax - xMin) * GetWeights(Size);
 
    cout << "Loading data grid" << endl;
    dataGrid = getDataGrid();
+   //tie(dataGrid, dataGridCov) = getDataGridWithCov();
 
+   /*
+   TGraph *gr = new TGraph;
+   for(int i = 0; i < dataGrid.size(); ++i) {
+      gr->SetPoint(i, nodes[i], dataGrid[i]);
+   }
+   gr->SetName("gr");
+   gr->SaveAs("test.root");
+   */
 }
 
 //function assumed to be normalized !!!
-double chebFitter::getLogLikelihoodSlow(vector<double> pars)
+double chebFitter::getLogLikelihoodSlow(vector<double> pars) const
 {
 
    double L = 0;
@@ -73,28 +72,20 @@ double chebFitter::getLogLikelihoodSlow(vector<double> pars)
       L += -2*log(v);
    }
 
+   cout << pars[0] <<" "<< pars[1] << " : " << L << endl;
 
-   //cout << pars[0] <<" "<< pars[1] << " : " << L << endl;
-
-   //exit(0);
    return L; 
 
 }
 
-//function assumed to be normalized !!!
-double chebFitter::getLogLikelihoodFast(vector<double> pars)
+//evaluation using cheb pols
+double chebFitter::getLogLikelihoodFast(vector<double> pars) const
 {
-   vector<double> funVals = getLogFunction(pars);
-
-   double L = 0;
-   for(int i = 0; i < funVals.size(); ++i) {
-      L += funVals[i] * dataGrid[i];
-   }
-   return L; 
-
+   VectorXd funVals = getLogFunction(pars);
+   return funVals.dot(dataGrid);
 }
 
-double chebFitter::operator()(const double *par)
+double chebFitter::operator()(const double *par) const
 {
    /*
    int N = 1e6;
@@ -115,33 +106,92 @@ double chebFitter::operator()(const double *par)
 }
 
 // get data transformed into the grid such that (chebFunVals dot dataGrid) == logL
-vector<double> chebFitter::getDataGrid()
+VectorXd chebFitter::getDataGrid() const
 {
-   double a = nodes.front();
-   double b = nodes.back();
+   double a = nodes[0];
+   double b = nodes[nodes.size()-1];
 
 
-   vector<double> polSum(nodes.size(), 0.);
+   VectorXd polSum = VectorXd::Zero(nodes.size());
    for(double x : data) {
-      double xx = (x - a) / (b - a);
-      vector<double> pol =  getPols(nodes.size(), xx);
-
-      for(int i = 0; i < pol.size(); ++i)
-         polSum[i] += pol[i];
-
+      double xx = (x - a) / (b - a); //normalize between 0 and 1
+      polSum += getPols(nodes.size(), xx);
    }
    cout << "Done " << endl;
 
+
+
+   /*
+   //new method
+   VectorXd dataNew(data.size());
+   for(int i = 0; i < data.size(); ++i)
+      dataNew[i] = (data[i] - a) / (b - a);
+
+   cout << "Starting " << endl;
+   VectorXd polSum = getPolsSum(nodes.size(), dataNew);
+   */
+
+
    //transform to the basis of the cheb nodes
-   vector<vector<double>> coefs = GetCoefsCheb(polSum.size());
-
-   vector<double> gridVals(polSum.size(), 0.0);
-   for(int i = 0; i < gridVals.size(); ++i) {
-      for(int j = 0; j < polSum.size(); ++j) {
-         gridVals[i] += coefs[j][i] * polSum[j];
-
-      }
-   }
+   MatrixXd coefs = GetCoefsCheb(polSum.size());
+   VectorXd gridVals = coefs.transpose() * polSum;
 
    return gridVals;
+}
+
+
+// get data transformed into the grid such that (chebFunVals dot dataGrid) == logL
+pair<VectorXd,MatrixXd> chebFitter::getDataGridWithCov() const
+{
+   double a = nodes[0];
+   double b = nodes[nodes.size()-1];
+
+   MatrixXd polSum2 = MatrixXd::Zero(nodes.size(), nodes.size());
+   VectorXd polSum  = VectorXd::Zero(nodes.size());
+   for(double x : data) {
+      double xx = (x - a) / (b - a); //normalize between 0 and 1
+      VectorXd pol = getPols(nodes.size(), xx);
+      polSum  += pol;
+      polSum2 += pol * pol.transpose();
+   }
+   cout << "Done " << endl;
+
+
+   //transform to the basis of the cheb nodes
+   MatrixXd coefs = GetCoefsCheb(polSum.size()).transpose();
+   VectorXd gridVals = coefs * polSum;
+   MatrixXd gridValsCov = coefs * polSum2 * coefs.transpose();
+
+   return make_pair(gridVals, gridValsCov);
+}
+
+
+//Minimize using ROOT minimizer
+vector<double> chebFitter::getMinimum(vector<par> pars)
+{
+    ROOT::Math::Minimizer* minimum =
+    ROOT::Math::Factory::CreateMinimizer("Minuit2", "");
+ 
+    // set tolerance , etc...
+    minimum->SetMaxFunctionCalls(10000000); // for Minuit/Minuit2
+    minimum->SetMaxIterations(100000);  // for GSL
+    minimum->SetTolerance(0.01);
+    minimum->SetPrintLevel(1);
+ 
+    // create function wrapper for minimizer
+    // a IMultiGenFunction type
+    ROOT::Math::Functor f(*this, pars.size());
+ 
+    minimum->SetFunction(f);
+ 
+    // Set the free variables to be minimized !
+    for(int i = 0; i < pars.size(); ++i) {
+       double step = (pars[i].vMax - pars[i].vMin) / 10;
+       minimum->SetLimitedVariable (i, pars[i].name.Data(), pars[i].v, step, pars[i].vMin, pars[i].vMax);
+    }
+
+    // do the minimization
+    minimum->Minimize();
+    cout << minimum->X()[0] <<" "<< minimum->X()[1]  << endl;
+    return vector<double>(minimum->X(), minimum->X() + pars.size());
 }

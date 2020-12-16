@@ -3,11 +3,14 @@
 #include <iostream>
 #include <cmath>
 
+#include <Eigen/Dense>
+using  Eigen::VectorXd;
+using  Eigen::MatrixXd;
 
 using namespace std;
 
 //For points between 0 and 1
-vector<double> GetWeights(int Size)
+VectorXd GetWeights(int Size)
 {
     //const int Size = 33;
     const int N = Size - 1;
@@ -28,7 +31,8 @@ vector<double> GetWeights(int Size)
             coef[2*k][n] = coef[2*k][N-n] = 2./N * cos(n*k*M_PI*2/N);
     }
 
-    vector<double> wgt(Size, 0.);
+    //vector<double> wgt(Size, 0.);
+    VectorXd wgt = VectorXd::Zero(Size);
     //arma::vec wgt(Size, arma::fill::zeros);
 
 
@@ -48,11 +52,11 @@ vector<double> GetWeights(int Size)
 }
 
 //Get vector with nodes by definition between 0 and 1
-vector<double> GetNodes(int Size)
+VectorXd GetNodes(int Size)
 {
     assert((Size - 1) % 2 == 0);
     //arma::vec xi(Size, arma::fill::zeros);
-    vector<double> xi(Size, 0.);
+    VectorXd xi = VectorXd::Zero(Size);
     for(int i = 0; i < Size; ++i) {
       double Cos = cos(i /(Size-1.) * M_PI);
       xi[i] = (1-Cos)/2;
@@ -61,9 +65,9 @@ vector<double> GetNodes(int Size)
 }
 
 //Evaluate cheb pols to Size at point x, x is between 0 and 1
-vector<double> getPols(int Size, double x)
+VectorXd getPols(int Size, double x)
 {
-    vector<double> pol(Size);
+    VectorXd pol(Size);
 
     if(Size >= 1) pol[0] = 1;
     if(Size >= 2) pol[1] = 2*x-1;
@@ -73,20 +77,47 @@ vector<double> getPols(int Size, double x)
     return pol;
 }
 
+//Evaluate sum of cheb pols to Size at vector x, x els are between 0 and 1
+VectorXd getPolsSum(int Size, VectorXd x)
+{
+   assert(Size > 2);
+
+   VectorXd polSum(Size);
+
+   VectorXd pol0 = 0*x.array()+ 1;
+   VectorXd pol1 = 2*x.array()-1;
+   VectorXd C    = 2 * pol1;
+
+   VectorXd pol2(x.size());
+    for(int i = 2; i < Size; ++i) {
+       polSum(i-2) = pol0.sum();
+
+       pol2 = C.array() * pol1.array() - pol0.array();
+
+       pol0 = pol1;
+       pol1 = pol2;
+    }
+
+    polSum(Size-2) = pol0.sum();
+    polSum(Size-1) = pol1.sum();
+
+    return polSum;
+}
 
 
 
 
 
 //Transformation matrix between cheb. nodes and cheb. coeficients
-vector<vector<double>> GetCoefs(int oldSize, bool isInverse = false)
+MatrixXd GetCoefs(int oldSize, bool isInverse = false)
 {
     const int N = oldSize - 1;
     assert(N%2 == 0);
 
+    MatrixXd  coef(oldSize, oldSize);
 
-    vector<vector<double>> coef(oldSize);
-    for(auto & el : coef) el.resize(oldSize);
+    //vector<vector<double>> coef(oldSize);
+    //for(auto & el : coef) el.resize(oldSize);
     //arma::mat coef(oldSize,oldSize);
 
     double mul = 1;
@@ -97,19 +128,19 @@ vector<vector<double>> GetCoefs(int oldSize, bool isInverse = false)
     for(int k = 0; k <= N; ++k) {
         double s = 0;
         if(!isInverse) {
-            coef[k][N] = C;
-            coef[k][0] = C * (k % 2 == 1 ? -1 : 1);
+            coef(k,N) = C;
+            coef(k,0) = C * (k % 2 == 1 ? -1 : 1);
         }
         else {
             mul = k % 2 == 1 ? -1 : 1;
-            coef[N-k][ N] = C * mul;
-            coef[N-k][ 0] = C ;
+            coef(N-k, N) = C * mul;
+            coef(N-k, 0) = C ;
         }
 
         for(int n = 1; n <= N-1; ++n) {
             double el = cos(n*k*M_PI / N) * 2.*C * mul;
-            if(!isInverse) coef[k][N-n] = el;
-            else           coef[N-k][N-n] = el;
+            if(!isInverse) coef(k,N-n) = el;
+            else           coef(N-k,N-n) = el;
         }
     }
     
@@ -120,18 +151,13 @@ vector<vector<double>> GetCoefs(int oldSize, bool isInverse = false)
 
 
 //with better normalization of the borders
-vector<vector<double>> GetCoefsCheb(int oldSize)
+MatrixXd GetCoefsCheb(int oldSize)
 {
     auto coef = GetCoefs(oldSize);
 
-    for(int j = 0; j < coef[0].size(); ++j) {
-       coef[0][j] *= 0.5;
-       coef[coef.size()-1][j] *= 0.5;
-    }
+    coef.row(0) *= 0.5;
+    coef.row(coef.rows()-1) *= 0.5;
 
-    //coef.row(0) *= 0.5;
-    //coef.row(coef.n_rows-1) *= 0.5;
-    
     return coef;
 }
 
@@ -139,13 +165,15 @@ vector<vector<double>> GetCoefsCheb(int oldSize)
 
 
 //Evaluate Cheb. pol at point x
-double evalPol(const vector<double> &polCoef, double x)
+double evalPol(const VectorXd &polCoef, double x)
 {
-    vector<double> pols = getPols(polCoef.size(), x);
+    VectorXd pols = getPols(polCoef.size(), x);
 
-    double s = 0;
-    for(int i = 0; i < pols.size(); ++i)
-       s += pols[i] * polCoef[i];
+    //double s = 0;
+    //for(int i = 0; i < pols.size(); ++i)
+       //s += pols[i] * polCoef[i];
+
+    double s = pols.dot(polCoef);
 
     return s;
     //return arma::dot(pols,polCoef);
