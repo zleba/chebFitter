@@ -1,4 +1,4 @@
-#include "chebFitter.h"
+#include "chebFitter2D.h"
 #include "nodes.h"
 
 #include <cmath>
@@ -14,20 +14,59 @@
 #include "Math/Functor.h"
 
 #include <Eigen/Core>
+//#include <Eigen/kroneckerProduct>
 
 using Eigen::MatrixXd;
 
 using namespace std;
 
 
-
-//return values of -2*log(p(x)), where p(x) is normalized to 1 over the fitted range
-VectorXd chebFitter::getLogFunction(vector<double> pars) const
+// tensor(outer) product of two vectors
+VectorXd kroneckerProduct(VectorXd a, VectorXd b)
 {
-   VectorXd fVals(nodes.size());
+   VectorXd res(a.size()*b.size());
 
    //calc function values
-   fVals = nodes.unaryExpr([&](double x) { return myFun(x, pars); });
+   for(int i = 0; i < a.size(); ++i)
+   for(int j = 0; j < b.size(); ++j) {
+      int iGl = i*b.size() + j;
+      res[iGl] = a[i]*b[j];
+   }
+   return res;
+}
+
+// tensor(outer) product of two matrices
+MatrixXd kroneckerProduct(MatrixXd a, MatrixXd b)
+{
+   MatrixXd res(a.rows()*b.rows(), a.cols()*b.cols());
+
+   //calc function values
+   for(int i = 0; i < a.rows(); ++i)
+   for(int j = 0; j < a.cols(); ++j)
+   for(int k = 0; k < b.rows(); ++k)
+   for(int l = 0; l < b.cols(); ++l) {
+      int iGl = i*b.rows() + k;
+      int jGl = j*b.cols() + l;
+      res(iGl,jGl) = a(i,j) * b(k,l);
+   }
+   return res;
+}
+
+
+
+
+
+//return values of -2*log(p(x)), where p(x) is normalized to 1 over the fitted range
+VectorXd chebFitter2D::getLogFunction(vector<double> pars) const
+{
+   VectorXd fVals(nodesX.size() * nodesY.size());
+
+   //calc function values
+   for(int i = 0; i < nodesX.size(); ++i)
+   for(int j = 0; j < nodesY.size(); ++j) {
+      int iGl = i*nodesY.size() + j;
+      fVals[iGl] = myFun({nodesX[i], nodesY[j]}, pars);
+   }
 
    //normalize the function
    double I = fVals.dot(weights);
@@ -38,39 +77,35 @@ VectorXd chebFitter::getLogFunction(vector<double> pars) const
 
 }
 
-void chebFitter::init(int Size, double xMin, double xMax)
+void chebFitter2D::init(int SizeX, double xMin, double xMax,  int SizeY, double yMin, double yMax)
 {
    // loading the Cheb nodes
-   nodes = (xMax-xMin) * GetNodes(Size).array() + xMin;
+   nodesX = (xMax-xMin) * GetNodes(SizeX).array() + xMin;
+   nodesY = (yMax-yMin) * GetNodes(SizeY).array() + yMin;
 
    // loding the weights for integration
-   weights = (xMax - xMin) * GetWeights(Size);
+   weightsX = (xMax - xMin) * GetWeights(SizeX);
+   weightsY = (yMax - yMin) * GetWeights(SizeY);
+   weights  = kroneckerProduct(weightsX, weightsY);
 
 
    // calculate the transformation matrix from pol coefs to grid points
-   coefsMat = GetCoefsCheb(Size).transpose();
+   coefsMatX = GetCoefsCheb(SizeX).transpose();
+   coefsMatY = GetCoefsCheb(SizeY).transpose();
+   coefsMat  = kroneckerProduct(coefsMatX, coefsMatY);
 
    cout << "Loading data grid" << endl;
    dataGrid = getDataGrid();
-   //tie(dataGrid, dataGridCov) = getDataGridWithCov();
 
-   /*
-   TGraph *gr = new TGraph;
-   for(int i = 0; i < dataGrid.size(); ++i) {
-      gr->SetPoint(i, nodes[i], dataGrid[i]);
-   }
-   gr->SetName("gr");
-   gr->SaveAs("test.root");
-   */
 }
 
 //function assumed to be normalized !!!
-double chebFitter::getLogLikelihoodSlow(vector<double> pars) const
+double chebFitter2D::getLogLikelihoodSlow(vector<double> pars) const
 {
 
    double L = 0;
    //#pragma omp parallel for  reduction(+: L)
-   for(double d : data) {
+   for(const auto &d : data) {
       double v = myFun(d, pars);
       //cout << v << endl;
       L += -2*log(v);
@@ -83,18 +118,17 @@ double chebFitter::getLogLikelihoodSlow(vector<double> pars) const
 }
 
 //evaluation using cheb pols
-double chebFitter::getLogLikelihoodFast(vector<double> pars) const
+double chebFitter2D::getLogLikelihoodFast(vector<double> pars) const
 {
    VectorXd funVals = getLogFunction(pars);
    double LL = funVals.dot(dataGrid);
 
-   for(auto p : pars)
-      cout << p << " ";
+   for(auto p : pars) cout << p << " ";
    cout << " : "<<LL << endl;
    return LL;
 }
 
-double chebFitter::operator()(const double *par) const
+double chebFitter2D::operator()(const double *par) const
 {
    /*
    int N = 1e6;
@@ -119,30 +153,25 @@ double chebFitter::operator()(const double *par) const
 }
 
 // get data transformed into the grid such that (chebFunVals dot dataGrid) == logL
-VectorXd chebFitter::getDataGrid() const
+VectorXd chebFitter2D::getDataGrid() const
 {
-   double a = nodes[0];
-   double b = nodes[nodes.size()-1];
+   double xMin = nodesX[0];
+   double xMax = nodesX[nodesX.size()-1];
+   double yMin = nodesY[0];
+   double yMax = nodesY[nodesY.size()-1];
 
 
-   VectorXd polSum = VectorXd::Zero(nodes.size());
-   for(double x : data) {
-      double xx = (x - a) / (b - a); //normalize between 0 and 1
-      polSum += getPols(nodes.size(), xx);
+   VectorXd polSum = VectorXd::Zero(nodesX.size() * nodesY.size());
+   for(auto xy : data) {
+      double x = (xy[0] - xMin) / (xMax - xMin); //normalize between 0 and 1
+      double y = (xy[1] - yMin) / (yMax - yMin); //normalize between 0 and 1
+      VectorXd polX = getPols(nodesX.size(), x);
+      VectorXd polY = getPols(nodesY.size(), y);
+
+      polSum += kroneckerProduct(polX, polY);
    }
    cout << "Done " << endl;
 
-
-
-   /*
-   //new method
-   VectorXd dataNew(data.size());
-   for(int i = 0; i < data.size(); ++i)
-      dataNew[i] = (data[i] - a) / (b - a);
-
-   cout << "Starting " << endl;
-   VectorXd polSum = getPolsSum(nodes.size(), dataNew);
-   */
 
 
    //transform to the basis of the cheb nodes
@@ -153,34 +182,9 @@ VectorXd chebFitter::getDataGrid() const
 }
 
 
-// get data transformed into the grid such that (chebFunVals dot dataGrid) == logL
-pair<VectorXd,MatrixXd> chebFitter::getDataGridWithCov() const
-{
-   double a = nodes[0];
-   double b = nodes[nodes.size()-1];
-
-   MatrixXd polSum2 = MatrixXd::Zero(nodes.size(), nodes.size());
-   VectorXd polSum  = VectorXd::Zero(nodes.size());
-   for(double x : data) {
-      double xx = (x - a) / (b - a); //normalize between 0 and 1
-      VectorXd pol = getPols(nodes.size(), xx);
-      polSum  += pol;
-      polSum2 += pol * pol.transpose();
-   }
-   cout << "Done " << endl;
-
-
-   //transform to the basis of the cheb nodes
-   MatrixXd coefs = GetCoefsCheb(polSum.size()).transpose();
-   VectorXd gridVals = coefs * polSum;
-   MatrixXd gridValsCov = coefs * polSum2 * coefs.transpose();
-
-   return make_pair(gridVals, gridValsCov);
-}
-
 
 //Minimize using ROOT minimizer
-vector<double> chebFitter::fitData(vector<par> pars, bool UseCheb)
+vector<double> chebFitter2D::fitData(vector<par> pars, bool UseCheb)
 {
    nPars = pars.size();
    useCheb = UseCheb;
@@ -217,8 +221,8 @@ vector<double> chebFitter::fitData(vector<par> pars, bool UseCheb)
    return vector<double>(minimum->X(), minimum->X() + pars.size());
 }
 
-
-double chebFitter::getFunctionFast(vector<double> pars, double x)
+/*
+double chebFitter2D::getFunctionFast(vector<double> pars, double x)
 {
     static VectorXd funVals = getLogFunction(pars);
 
@@ -227,3 +231,4 @@ double chebFitter::getFunctionFast(vector<double> pars, double x)
     return  exp(-0.5*interpol(nodes, funVals, x));
 
 }
+*/

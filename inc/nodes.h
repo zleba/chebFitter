@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <Eigen/Dense>
 using Eigen::VectorXd;
@@ -23,3 +25,12 @@ MatrixXd GetCoefs(int oldSize, bool isInverse = false);
 
 //with better normalization of the borders
 MatrixXd GetCoefsCheb(int oldSize);
+
+
+//Get Interpolation vector at point x
+VectorXd interpol(const VectorXd &xi, double x);
+
+
+//Get interpolated function value at point x
+double interpol(VectorXd xi, VectorXd vals, double x);
+

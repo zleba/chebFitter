@@ -68,12 +68,13 @@ VectorXd GetNodes(int Size)
 VectorXd getPols(int Size, double x)
 {
     VectorXd pol(Size);
+    double C = 2*(2*x-1);
 
     if(Size >= 1) pol[0] = 1;
-    if(Size >= 2) pol[1] = 2*x-1;
+    if(Size >= 2) pol[1] = C/2;
 
     for(int i = 2; i < Size; ++i)
-        pol[i] = 2*(2*x-1)*pol[i-1] - pol[i-2];
+        pol[i] = C*pol[i-1] - pol[i-2];
     return pol;
 }
 
@@ -179,31 +180,37 @@ double evalPol(const VectorXd &polCoef, double x)
     //return arma::dot(pols,polCoef);
 }
 
-/*
 
 //Get Interpolation vector at point x
-arma::vec interpol(arma::vec xi, double x)
+VectorXd interpol(const VectorXd &xi, double x)
 {
-    arma::vec coefs(xi.n_rows);
-    for(int i = 0; i < xi.n_rows; ++i) {
+    double Norm = (xi[xi.size()-1] - xi[0])/2;
+    VectorXd coefs(xi.size());
+    for(int i = 0; i < xi.size(); ++i) {
         double num = 1, den = 1;
-        for(int j = 0; j < xi.n_rows; ++j)
+        for(int j = 0; j < xi.size(); ++j)
             if(j != i) {
-                num *= x     - xi(j);
-                den *= xi(i) - xi(j);
+                num *= (x     - xi(j))/Norm;
+                den *= (xi(i) - xi(j))/Norm;
+                //cout << x  <<" "<< xi(i) <<" "<< xi(j) <<" : " << num <<" "<< den <<  endl;
             }
+        //cout << num <<" "<< den << endl;
         coefs(i) = num/den;
     }
     return coefs;
 }
 
+
 //Get interpolated function value at point x
-double interpol(arma::vec xi, arma::vec vals, double x)
+double interpol(VectorXd xi, VectorXd vals, double x)
 {
-    arma::vec coefs = interpol(xi, x);
-    return arma::dot(coefs,vals);
+    VectorXd coefs = interpol(xi, x);
+    //cout << "Radecek " << coefs << endl;
+    return coefs.dot(vals);
 }
 
+
+/*
 
 
 //Transformation from chebNodes between 0 and 1 to chebNodes between a and b
