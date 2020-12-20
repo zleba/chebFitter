@@ -38,3 +38,8 @@ The optimal number of the Chebyshev nodes depends on the shape of the function, 
 
 
 The advantage of the "fast" fitting is that the function does not need to be normalized to 1, i.e. the function is internally normalized to 1 automatically.
+
+Run the example as:
+```
+./testFit
+```
