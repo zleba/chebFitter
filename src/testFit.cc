@@ -5,13 +5,6 @@
 #include "chebFitter.h"
 #include "chebFitter2D.h"
 
-#include <iostream>
-#include <Eigen/Dense>
- 
-using namespace std;
-
-using Eigen::MatrixXd;
-
 
 using namespace std;
 
