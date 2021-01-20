@@ -111,11 +111,10 @@ class chebFitter:
 
         from iminuit import Minuit
 
-        m = Minuit.from_array_func(self.evalVec, parsVec, name=self.parsNames)
+        m = Minuit(self.evalVec, parsVec, name=self.parsNames)
         m.migrad()  # run optimiser
 
-        # print('ahoj', m.values)
-        return dict([[e, m.values[e]] for e in m.values])
+        return dict([[self.parsNames[i], m.values[i]] for i in range(len(m.values))])
 
     def funFast(self, x, pars):
 
