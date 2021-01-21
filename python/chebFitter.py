@@ -64,8 +64,9 @@ class chebFitter:
         self.coefsMat = np.transpose(GetCoefsCheb(Size))
 
         print("Loading data grid")
-        self.dataGrid = self.getDataGrid(data)
-        self.data = data
+        dataSel = data[(xMin < data) & (data < xMax)]
+        self.dataGrid = self.getDataGrid(dataSel)
+        self.data = dataSel
         # tie(dataGrid, dataGridCov) = getDataGridWithCov();
 
     # function assumed to be normalized !!!
@@ -99,19 +100,25 @@ class chebFitter:
         p = dict(zip(self.parsNames, pars))
         return self.eval(p)
 
-    def fitData(self, pars, useCheb=True):
+    def fitData(self, pars, limits=None, useCheb=True):
 
         parsVec = []
+        limitsVec = []
         self.parsNames = []
         for k in pars:
             self.parsNames.append(k)
             parsVec.append(pars[k])
+            if limits is not None and k in limits:
+                limitsVec.append(limits[k])
+            else:
+                limitsVec.append((None, None))
 
         self.useCheb = useCheb
 
         from iminuit import Minuit
 
         m = Minuit(self.evalVec, parsVec, name=self.parsNames)
+        m.limits = limitsVec
         m.migrad()  # run optimiser
 
         return dict([[self.parsNames[i], m.values[i]] for i in range(len(m.values))])
