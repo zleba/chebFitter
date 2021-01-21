@@ -24,7 +24,7 @@ make -j4
 
 The command `make` complies the program, `-j4` means running the compilation at 4 cores (can be omitted).
 
-## Running
+## Running C++ version
 
 Please look at file `src/testFit.cc` where the chebFitter is used to fit 1D or 2D Gaussian distribution.
 There is a possibility to use the classical way of evaluating the likelihood (= "slow" method) or the "fast" way where the Chebyshev polynomials are used.
@@ -43,3 +43,12 @@ Run the example as:
 ```
 ./testFit
 ```
+## Running python version
+
+Run the follwing commands
+```
+cd python
+jupyter-lab
+```
+This will open the JupyterLab in the browser, open the `testFitter.ipynb` notebook and run it.
+Ensure that `numpy`, `iminuit`, `matplotlib` and `numba` python packages are installed.
