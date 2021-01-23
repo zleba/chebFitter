@@ -48,7 +48,7 @@ class chebFitter:
 
         return gridVals
 
-    def __init__(self, Size, xMin, xMax, SizeS, sMin, sMax, data, fun):
+    def __init__(self, Size, xMin, xMax, data, fun): # SizeS, sMin, sMax, data, fun):
 
         self.myFun = fun
 
