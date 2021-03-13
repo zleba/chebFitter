@@ -121,7 +121,7 @@ class chebFitter:
         m.limits = limitsVec
         m.migrad()  # run optimiser
 
-        return dict([[self.parsNames[i], m.values[i]] for i in range(len(m.values))])
+        return dict([[self.parsNames[i], (m.values[i], m.errors[i]) ] for i in range(len(m.values))])
 
     def funFast(self, x, pars):
 
