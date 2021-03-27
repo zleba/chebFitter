@@ -55,14 +55,25 @@ class chebFitter:
     # get data transformed into the grid such that (chebFunVals dot dataGrid) == logL
     def getDataGrid(self, data):
         xMin = self.nodesX[0]
+        print(xMin)
         xMax = self.nodesX[-1]
+        print(xMax)
         yMin = self.nodesY[0]
+        print(yMin)
         yMax = self.nodesY[-1]
-
+        print(yMax)
         # normalize between 0 and 1
         dataNorm = np.empty_like(data)
         dataNorm[:, 0] = (data[:, 0] - xMin) / (xMax - xMin)
-        dataNorm[:, 1] = (data[:, 1] - yMin) / (yMax - yMin)
+        dataNorm[:, -1] = (data[:, -1] - yMin) / (yMax - yMin)
+        
+        #print('datanorm0 max', np.amax(dataNorm[:,0]))
+        #print('datanorm0 min', np.amin(dataNorm[:,0]))
+        #print('datanorm1 max', np.amax(dataNorm[:,1]))
+        #print('datanorm1 min', np.amin(dataNorm[:,1]))
+        print('datanorm',dataNorm)
+        
+        
 
         polSum = calcLoopFast(self.nodesX.size, self.nodesY.size, dataNorm)
         print("Done")
@@ -72,7 +83,6 @@ class chebFitter:
 
         # transform to the basis of the cheb nodes
         gridVals = self.coefsMat @ polSum
-
         return gridVals
 
     def __init__(self, SizeX, xMin, xMax, SizeY, yMin, yMax, data, fun):
@@ -96,8 +106,16 @@ class chebFitter:
         self.coefsMat  = outer2D(self.coefsMatX, self.coefsMatY)
 
         print("Loading data grid")
+       # values = data[:,0]
+       # sigm = data[:,1]
+       # dataSel = data[(xMin < all(values)) and (all(values)< xMax) and (yMin < all(sigm)) and (all(sigm) < yMax)]
+       # self.dataGrid = self.getDataGrid(dataSel)
+       # self.data = dataSel
         self.dataGrid = self.getDataGrid(data)
         self.data = data
+        print('vramci init x0', self.data[0])
+        
+    
         # tie(dataGrid, dataGridCov) = getDataGridWithCov();
 
     # function assumed to be normalized !!!
@@ -128,20 +146,26 @@ class chebFitter:
         p = dict(zip(self.parsNames, pars))
         return self.eval(p)
 
-    def fitData(self, pars, useCheb=True):
-
+    def fitData(self, pars, limits=None, useCheb=True):
+        
         parsVec = []
+        limitsVec = []
         self.parsNames = []
         for k in pars:
             self.parsNames.append(k)
             parsVec.append(pars[k])
-
+            if limits is not None and k in limits:
+                limitsVec.append(limits[k])
+            else:
+                limitsVec.append((None,None))
+            
         self.useCheb = useCheb
 
         from iminuit import Minuit
 
         m = Minuit(self.evalVec, parsVec, name=self.parsNames)
         m.migrad()  # run optimiser
+        m.limits = limitsVec
 
         return dict([[self.parsNames[i], m.values[i]] for i in range(len(m.values))])
 
@@ -212,3 +236,5 @@ class chebFitter:
         polsY = getPols(len(self.nodesY), yRel)
         res = np.dot(self.coefsY, polsY)
         return res
+
+
