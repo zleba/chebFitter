@@ -120,11 +120,17 @@ class chebFitter:
         m = Minuit(self.evalVec, parsVec, name=self.parsNames)
         m.limits = limitsVec
         m.migrad()  # run optimiser
+<<<<<<< HEAD
         for i in range(len(m.values)):
             print(np.sqrt(m.covariance[i,i]))
      
-        return dict([[self.parsNames[i], m.values[i]] for i in range(len(m.values))])
-    
+        return dict([[self.parsNames[i], (m.values[i], m.errors[i]) ] for i in range(len(m.values))])
+
+=======
+
+        return dict([[self.parsNames[i], (m.values[i], m.errors[i]) ] for i in range(len(m.values))])
+
+>>>>>>> 4bad320445893ee5bc69bdc627e4701c85fda701
     def funFast(self, x, pars):
 
         if not hasattr(self, 'parsOld') or self.parsOld != pars:
